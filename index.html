@@ -207,5 +207,55 @@
 })();
 </script>
 
+
+<!-- copy-buttons enhancer v1 -->
+<script>
+(function(){
+  function normalizeQuotes(s){ s=(s||'').toString(); while(s.indexOf('""')!==-1){ s=s.replace(/""/g,'"'); } return s; }
+  function flashCopied(btn){ if(!btn) return; var old=btn.textContent; btn.classList.add('copied'); btn.textContent='Copied!'; setTimeout(function(){ btn.classList.remove('copied'); btn.textContent=old; }, 900); }
+  function legacyCopy(text, btn){ var ta=document.createElement('textarea'); ta.style.position='fixed'; ta.style.opacity='0'; ta.value=text; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); flashCopied(btn);}catch(e){} document.body.removeChild(ta); }
+  function copyText(text, btn){ var t=(text||'').toString(); if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(function(){ flashCopied(btn); }).catch(function(){ legacyCopy(t, btn); }); } else { legacyCopy(t, btn); } }
+  function installButtonsIn(details){
+    if(!(details && details.nodeType===1)) return;
+    if(details.querySelector('.util-row')) return; // already has
+    var qEl = details.querySelector('.q');
+    var aEl = details.querySelector('.answer');
+    if(!qEl || !aEl) return;
+    var q = normalizeQuotes(qEl.textContent||'');
+    var a = normalizeQuotes(aEl.textContent||'');
+
+    var util = document.createElement('div');
+    util.className='util-row';
+    var bq = document.createElement('button'); bq.type='button'; bq.className='copy-btn'; bq.textContent='Copy Q';
+    bq.addEventListener('click', function(ev){ ev.stopPropagation(); copyText(q, bq); });
+    var ba = document.createElement('button'); ba.type='button'; ba.className='copy-btn'; ba.textContent='Copy A';
+    ba.addEventListener('click', function(ev){ ev.stopPropagation(); copyText(a, ba); });
+    util.appendChild(bq); util.appendChild(ba);
+
+    var ans = aEl; // insert row just above the answer
+    details.insertBefore(util, ans);
+  }
+  function enhanceAll(){ document.querySelectorAll('#list details').forEach(installButtonsIn); }
+
+  var list = document.getElementById('list');
+  if(list){
+    var obs = new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        m.addedNodes && m.addedNodes.forEach(function(n){
+          if(n.nodeType===1){
+            if(n.matches && n.matches('details')) installButtonsIn(n);
+            if(n.querySelectorAll) n.querySelectorAll('details').forEach(installButtonsIn);
+          }
+        });
+      });
+    });
+    obs.observe(list, {childList:true, subtree:true});
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', enhanceAll); else enhanceAll();
+})();
+</script>
+<!-- /copy-buttons enhancer v1 -->
+
 </body>
 </html>
