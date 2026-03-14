@@ -46,6 +46,18 @@
     .site-banner{height:150px;border-radius:14px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;background: linear-gradient(180deg, #0e1828, #0b1220)}
     .site-banner h2{margin:0;font-weight:800;letter-spacing:.5px;line-height:1.1;font-size:clamp(26px,5vw,48px);background: linear-gradient(90deg,#ff6b6b,#f7d154,#6bd66b,#5cc8ff,#8f7dff,#ff6bd5);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;text-shadow: 0 1px 10px rgba(0,0,0,.35)}
     @media (max-width: 540px){.site-banner{height:110px;padding:8px}.site-banner h2{font-size: clamp(22px,6vw,36px);letter-spacing:.3px}}
+    header p { text-align:center; font-weight:700; margin-top:20px; }
+    .site-banner { margin-top:16px; margin-bottom:16px; }
+  </style>
+
+  <!-- Voting styles -->
+  <style>
+  .vote { appearance:none; border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:999px; padding:6px 10px; font-size:14px; line-height:1; cursor:pointer; }
+  .vote:hover { border-color:#2a3d63; }
+  .vote.active, .vote[aria-pressed="true"]{ border-color:#2dd4bf; color:#2dd4bf; }
+  .vote.up::before { content:"👍 "; }
+  .vote.down::before { content:"👎 "; }
+  .util-row{ display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:8px; }
   </style>
 </head>
 <body>
@@ -53,8 +65,7 @@
 <div class="site-banner" role="img" aria-label="Betcha Didn't Know rainbow banner"><h2>Betcha Didn't Know That!</h2></div>
 
     <header>
-      <h1>Betcha Didn’t Know!</h1>
-      <p>Select a category, then tap a question to reveal the answer. Use Next/Prev to move through sets of 10.</p>
+      <p style="text-align:center; font-weight:700; margin-top:20px;">Select a category, then tap a question to reveal the answer. Use Next/Prev to move through sets of 10.</p>
     </header>
 
     <div class="toolbar">
@@ -266,5 +277,45 @@
 </script>
 <!-- /copy-buttons enhancer v1 -->
 
+
+<!-- Voting logic: thumbs up/down + daily scoreboard -->
+<script>(()=>{
+  const LIST = document.getElementById('list');
+  const TODAY = new Date().toISOString().slice(0,10);
+  const VOTES_KEY = `bdk_votes_${TODAY}`;
+  function ensureScoreboard(){
+    const controls = document.querySelector('.toolbar .controls');
+    if (!controls) return;
+    const hasGood = document.getElementById('scoreGood');
+    const hasBad  = document.getElementById('scoreBad');
+    if (hasGood && hasBad) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div id="scoreBoard" class="pill" aria-live="polite" title="Today's score" style="display:inline-flex;gap:10px;align-items:center;">
+        <span aria-label="Correct today">👍 <b id="scoreGood">0</b></span>
+        <span aria-hidden="true">|</span>
+        <span aria-label="Wrong today">👎 <b id="scoreBad">0</b></span>
+      </div>
+      <button id="resetScore" class="pill btn" title="Reset score">Reset Score</button>`;
+    controls.appendChild(wrap);
+  }
+  ensureScoreboard();
+  const scoreGood = document.getElementById('scoreGood');
+  const scoreBad  = document.getElementById('scoreBad');
+  function loadVotes(){ try { return JSON.parse(localStorage.getItem(VOTES_KEY) || '{}'); } catch { return {}; } }
+  function saveVotes(v){ localStorage.setItem(VOTES_KEY, JSON.stringify(v)); }
+  function hashRow(q,a,c){ const s = `${(c||'').toLowerCase()}|${(q||'').toLowerCase()}|${(a||'').toLowerCase()}`; let h=0; for(let i=0;i<s.length;i++){ h=(h<<5)-h + s.charCodeAt(i); h|=0; } return `q_${Math.abs(h)}`; }
+  function getRowFromCard(card){ const q = card.querySelector('.q')?.textContent?.trim() || ''; const a = card.querySelector('.answer')?.textContent?.trim() || ''; const c = card.querySelector('.cat-badge')?.textContent?.trim() || ''; return { q, a, c, key: hashRow(q,a,c) }; }
+  function setActive(activeBtn, inactiveBtn){ activeBtn.setAttribute('aria-pressed','true'); activeBtn.classList.add('active'); inactiveBtn.setAttribute('aria-pressed','false'); inactiveBtn.classList.remove('active'); }
+  function clearActive(btn){ btn.setAttribute('aria-pressed','false'); btn.classList.remove('active'); }
+  function onVote(row, dir, btn, otherBtn){ const votes = loadVotes(); const prev = votes[row.key]; if (prev === dir){ delete votes[row.key]; clearActive(btn); } else { votes[row.key] = dir; setActive(btn, otherBtn); } saveVotes(votes); updateTotalsFromVotes(votes); }
+  function updateTotalsFromVotes(votes){ let good=0,bad=0; Object.values(votes||{}).forEach(v=>{ if(v==='up') good++; else if(v==='down') bad++; }); if (scoreGood) scoreGood.textContent = String(good); if (scoreBad)  scoreBad.textContent  = String(bad); }
+  function addVotesToCard(card, votes){ let util = card.querySelector('.util-row'); if (!util){ util = document.createElement('div'); util.className='util-row'; card.appendChild(util); } if (util.querySelector('.vote')) return; const upBtn = document.createElement('button'); upBtn.className = 'vote up'; upBtn.type='button'; upBtn.title='I got this right'; upBtn.setAttribute('aria-pressed','false'); const downBtn = document.createElement('button'); downBtn.className = 'vote down'; downBtn.type='button'; downBtn.title='I got this wrong'; downBtn.setAttribute('aria-pressed','false'); util.appendChild(upBtn); util.appendChild(downBtn); const row = getRowFromCard(card); const v = votes[row.key]; if (v==='up') setActive(upBtn, downBtn); if (v==='down') setActive(downBtn, upBtn); upBtn.addEventListener('click', ()=> onVote(row, 'up', upBtn, downBtn)); downBtn.addEventListener('click', ()=> onVote(row, 'down', downBtn, upBtn)); }
+  function enhanceAll(){ const votes = loadVotes(); updateTotalsFromVotes(votes); if (!LIST) return; LIST.querySelectorAll('details').forEach(card=> addVotesToCard(card, votes)); }
+  const obs = new MutationObserver((muts)=>{ if (muts.some(m => Array.from(m.addedNodes).some(n => n.nodeType===1 && (n.matches?.('details') || n.querySelector?.('details'))))) { enhanceAll(); } });
+  if (LIST) obs.observe(LIST, { childList:true, subtree:true });
+  document.getElementById('resetScore')?.addEventListener('click', ()=>{ localStorage.removeItem(VOTES_KEY); updateTotalsFromVotes({}); LIST?.querySelectorAll('.vote').forEach(b=>{ b.setAttribute('aria-pressed','false'); b.classList.remove('active'); }); });
+  enhanceAll();
+})();</script>
 </body>
 </html>
