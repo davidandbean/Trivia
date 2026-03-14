@@ -30,12 +30,24 @@ summary::-webkit-details-marker{display:none}
 .answer{color:var(--text);opacity:.95;padding:10px 2px 4px;border-top:1px dashed var(--border);margin-top:8px;line-height:1.5}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:8px}
 .site-banner{height:150px;border-radius:14px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;background: linear-gradient(180deg, #0e1828, #0b1220)}
-.site-banner h2{margin:0;font-weight:800;letter-spacing:.5px;line-height:1.1;font-size:clamp(26px,5vw,48px);background: linear-gradient(90deg,#ff6b6b,#f7d154,#6bd66b,#5cc8ff,#8f7dff,#ff6bd5);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;text-shadow: 0 0 0 rgba(0,0,0,0), 0 1px 10px rgba(0,0,0,.35)}
+.site-banner h2{margin:0;font-weight:800;letter-spacing:.5px;line-height:1.1;font-size:clamp(26px,5vw,48px);background: linear-gradient(90deg,#ff6b6b,#f7d154,#6bd66b,#5cc8ff,#8f7dff,#ff6bd5);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;text-shadow: 0 1px 10px rgba(0,0,0,.35)}
 @media (max-width: 540px){.site-banner{height:110px;padding:8px}.site-banner h2{font-size: clamp(22px,6vw,36px);letter-spacing:.3px}.toolbar{padding-top:8px;padding-bottom:6px}details{padding:10px 10px}summary{gap:8px}}
 .copy-btn{font-size:12px;padding:6px 10px;border-radius:999px;background:var(--card);color:var(--text);border:1px solid var(--border);cursor:pointer}
 .copy-btn:hover{border-color:#2a3d63}
 .copy-btn.copied{border-color:#2dd4bf;color:#2dd4bf}
 .util-row{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin:8px 0 0}
+/* This day in history */
+.history-card{margin:10px auto 0;border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:linear-gradient(180deg,#101a2a,#0b1220)}
+.history-title{font-size:12px;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.4px}
+.history-columns{display:grid;grid-template-columns: 1fr; gap:12px}
+@media (min-width: 720px){ .history-columns{ grid-template-columns: 2fr 1fr 1fr; } }
+.history-list ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.history-list li{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start}
+.history-list .y{font-weight:800;color:#a78bfa}
+.history-list a{color:#5cb3ff;text-decoration:none}
+.history-list a:hover{text-decoration:underline}
+.attribution{margin-top:6px;color:var(--muted);font-size:12px}
+.attribution a{color:#9ccaff}
 </style>
 </head>
 <body>
@@ -44,6 +56,7 @@ summary::-webkit-details-marker{display:none}
   <header>
     <p id="headline" style="text-align:center; font-weight:700; margin-top:20px;">Here is the daily trivia for …</p>
   </header>
+  <div id="thisDay" class="history-card" aria-live="polite"></div>
   <div class="toolbar">
     <div class="controls">
       <div class="field">
@@ -144,6 +157,64 @@ async function copyText(text, btn){
   }catch(e){ btn.textContent='Copy failed'; setTimeout(()=>{ btn.textContent='Copy'; }, 1200); }
 }
 
+// ====== This Day in History (Events, Births, Deaths) ======
+function pad2(n){ return String(n).padStart(2,'0'); }
+async function loadHistory(dateISO){
+  const d = new Date(dateISO+'T00:00:01');
+  const mm = pad2(d.getMonth()+1), dd = pad2(d.getDate());
+  const parent = document.getElementById('thisDay');
+  if(!parent) return;
+  parent.innerHTML = `
+    <div class="history-title">This day in history</div>
+    <div class="history-columns">
+      <div class="history-list" id="hist-events">Loading…</div>
+      <div class="history-list" id="hist-births">Loading…</div>
+      <div class="history-list" id="hist-deaths">Loading…</div>
+    </div>
+    <div class="attribution">Data from the Wikipedia "On this day" feed. <a href="https://api.wikimedia.org/wiki/Feed_API/Reference/On_this_day" target="_blank" rel="noopener noreferrer">Learn more</a>.</div>`;
+
+  const headers = { 'Accept':'application/json', 'Api-User-Agent':'BetchaDaily/1.0 (non-commercial, academic; contact: example@example.com)' };
+  try{
+    const [ev, b, dth] = await Promise.all([
+      fetch(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/selected/${mm}/${dd}`, {headers}),
+      fetch(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/births/${mm}/${dd}`, {headers}),
+      fetch(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/deaths/${mm}/${dd}`, {headers}),
+    ]);
+    const [evJ, bJ, dJ] = await Promise.all([ev.ok?ev.json():null, b.ok?b.json():null, dth.ok?dth.json():null]);
+    const evArr = (evJ && (evJ.selected || evJ.events) || []).slice(0,3);
+    const births = (bJ && bJ.births || []).slice(0,3);
+    const deaths = (dJ && dJ.deaths || []).slice(0,3);
+
+    function renderList(elId, items, label){
+      const box = document.getElementById(elId);
+      if(!box) return;
+      const ul = document.createElement('ul');
+      if(!items.length){ box.textContent = `No ${label.toLowerCase()} found.`; return; }
+      items.forEach(it => {
+        const li = document.createElement('li');
+        const y = document.createElement('span'); y.className='y'; y.textContent = it.year || '';
+        const t = document.createElement('span'); t.className='t';
+        const page = (it.pages && it.pages[0]) || {};
+        const href = page?.content_urls?.desktop?.page || page?.content_urls?.mobile?.page;
+        const text = it.text || page?.extract || page?.titles?.normalized || '';
+        if(href){ const a=document.createElement('a'); a.href=href; a.target='_blank'; a.rel='noopener noreferrer'; a.textContent=text; t.appendChild(a); }
+        else { t.textContent = text; }
+        li.appendChild(y); li.appendChild(t); ul.appendChild(li);
+      });
+      box.innerHTML = `<div class="history-title">${label}</div>`;
+      box.appendChild(ul);
+    }
+
+    renderList('hist-events', evArr, 'Events');
+    renderList('hist-births', births, 'Births');
+    renderList('hist-deaths', deaths, 'Deaths');
+  }catch(e){
+    ['hist-events','hist-births','hist-deaths'].forEach(id=>{
+      const box = document.getElementById(id); if(box) box.textContent = 'History snippet unavailable right now.';
+    });
+  }
+}
+
 function render(dateISO){
   const dateObj = new Date(dateISO+'T00:00:01');
   document.getElementById('headline').textContent = `Here is the daily trivia for ${fmtLong(dateObj)}.`;
@@ -169,9 +240,11 @@ function render(dateISO){
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{
-  buildDateOptions('2026-03-10');
+  const startISO='2026-03-10';
+  buildDateOptions(startISO);
   render(dateSelect.value);
-  dateSelect.addEventListener('change', ()=> render(dateSelect.value));
+  loadHistory(dateSelect.value);
+  dateSelect.addEventListener('change', ()=> { render(dateSelect.value); loadHistory(dateSelect.value); });
   revealAllBtn.addEventListener('click', ()=>{
     const openAny = [...list.querySelectorAll('details')].some(d=>!d.open);
     list.querySelectorAll('details').forEach(d=> d.open = openAny);
